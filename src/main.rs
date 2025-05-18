@@ -19,8 +19,8 @@ async fn main() {
 
     loop {
         match client.get("https://www.google.com").send().await {
-            Ok(r) => println!("success"),
-            Err(e) => println!("error"),
+            Ok(_r) => println!("success"),
+            Err(_e) => println!("error"),
         }
         // client2.get("https://www.google.com").send().await.unwrap();
         sleep(Duration::from_secs(1)).await;
