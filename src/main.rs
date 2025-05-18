@@ -12,11 +12,6 @@ async fn main() {
         .build()
         .unwrap();
 
-    // let client2 = reqwest::ClientBuilder::new()
-    //     .proxy(Proxy::custom(create_resolver_fn()))
-    //     .build()
-    //     .unwrap();
-
     loop {
         match client.get("https://www.google.com").send().await {
             Ok(_r) => println!("success"),
