@@ -25,10 +25,6 @@ impl SystemProxyMap {
         Self(HashMap::new())
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
     pub fn get(&self, k: &str) -> Option<&String> {
         self.0.get(k)
     }
