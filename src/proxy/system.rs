@@ -1,9 +1,24 @@
-use std::{collections::HashMap, env};
+use std::{
+    collections::HashMap,
+    env,
+    sync::{Arc, LazyLock, OnceLock},
+};
 
-use super::{platform::parse_platform_values, util::is_cgi, IntoProxyScheme, ProxyScheme};
+use url::Url;
+
+use super::{
+    platform::{
+        get_from_platform, parse_platform_values, resolve_proxy_from_url, start_background_watcher,
+    },
+    util::is_cgi,
+};
+
+pub(crate) static SYSTEM_PROXY_CACHE: OnceLock<arc_swap::ArcSwap<SystemProxyMap>> = OnceLock::new();
+pub(crate) static ENV_PROXY_CACHE: LazyLock<SystemProxyMap> =
+    LazyLock::new(|| SystemProxyMap::from_environment());
 
 #[derive(Debug)]
-pub struct SystemProxyMap(HashMap<String, ProxyScheme>);
+pub struct SystemProxyMap(HashMap<String, String>);
 
 impl SystemProxyMap {
     pub fn new() -> Self {
@@ -14,16 +29,12 @@ impl SystemProxyMap {
         self.0.is_empty()
     }
 
-    pub fn get(&self, k: &str) -> Option<&ProxyScheme> {
+    pub fn get(&self, k: &str) -> Option<&String> {
         self.0.get(k)
     }
 
     pub fn clear(&mut self) {
         self.0.clear()
-    }
-
-    pub fn with_proxy(&self, f: impl Fn(&SystemProxyMap)) {
-        f(self)
     }
 
     pub fn from_environment() -> Self {
@@ -62,32 +73,27 @@ impl SystemProxyMap {
         if addr.trim().is_empty() {
             // do not accept empty or whitespace proxy address
             false
-        } else if let Ok(valid_addr) = addr.into_proxy_scheme() {
-            self.0.insert(scheme.into(), valid_addr);
-            true
         } else {
-            false
+            self.0.insert(scheme.into(), addr);
+            true
         }
     }
 }
 
-// fn get_sys_proxies(
-//     #[cfg_attr(
-//         not(any(target_os = "windows", target_os = "macos")),
-//         allow(unused_variables)
-//     )]
-//     platform_proxies: Option<String>,
-// ) -> SystemProxyMap {
-//     let proxies = SystemProxyMap::from_environment();
+pub fn get_proxy_cache() -> Arc<SystemProxyMap> {
+    let cache = SYSTEM_PROXY_CACHE.get_or_init(|| {
+        arc_swap::ArcSwap::from_pointee(parse_platform_values(get_from_platform()))
+    });
+    cache.load().clone()
+}
 
-//     #[cfg(any(target_os = "windows", target_os = "macos"))]
-//     if proxies.is_empty() {
-//         // if there are errors in acquiring the platform proxies,
-//         // we'll just return an empty HashMap
-//         if let Some(platform_proxies) = platform_proxies {
-//             return parse_platform_values(platform_proxies);
-//         }
-//     }
+pub fn update_proxy_cache(proxy_map: SystemProxyMap) {
+    SYSTEM_PROXY_CACHE
+        .get()
+        .map(|p| p.store(Arc::new(proxy_map)));
+}
 
-//     proxies
-// }
+pub fn create_auto_proxy_fn() -> impl Fn(&Url) -> Option<String> + Send + Sync + 'static {
+    start_background_watcher();
+    resolve_proxy_from_url
+}

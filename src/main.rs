@@ -1,6 +1,6 @@
-use std::time::Duration;
-use proxy::create_resolver_fn;
+use proxy::create_auto_proxy_fn;
 use reqwest::Proxy;
+use std::time::Duration;
 use tokio::time::sleep;
 
 mod proxy;
@@ -8,7 +8,7 @@ mod proxy;
 #[tokio::main]
 async fn main() {
     let client = reqwest::ClientBuilder::new()
-        .proxy(Proxy::custom(create_resolver_fn()))
+        .proxy(Proxy::custom(create_auto_proxy_fn()))
         .build()
         .unwrap();
 
@@ -20,7 +20,7 @@ async fn main() {
     loop {
         match client.get("https://www.google.com").send().await {
             Ok(r) => println!("success"),
-            Err(e) => println!("error")
+            Err(e) => println!("error"),
         }
         // client2.get("https://www.google.com").send().await.unwrap();
         sleep(Duration::from_secs(1)).await;

@@ -1,4 +1,9 @@
-use super::system::SystemProxyMap;
+use url::Url;
+
+use crate::proxy::system::get_proxy_cache;
+
+use super::system::{ENV_PROXY_CACHE, SystemProxyMap};
+use std::{sync::Once, thread};
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 pub fn get_from_platform() -> Option<String> {
@@ -11,12 +16,63 @@ pub fn get_from_platform() -> Option<String> {
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
-pub fn parse_platform_values(platform_values: String) -> SystemProxyMap {
+pub fn parse_platform_values(platform_values: Option<String>) -> SystemProxyMap {
     #[cfg(target_os = "macos")]
     use super::platform_macos::parse_platform_values_impl;
     #[cfg(target_os = "windows")]
     use super::platform_windows::parse_platform_values_impl;
-
     parse_platform_values_impl(platform_values)
+}
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub fn background_proxy_watcher() {
+    #[cfg(target_os = "macos")]
+    use super::platform_macos::background_proxy_watcher_impl;
+    #[cfg(target_os = "windows")]
+    use super::platform_windows::background_proxy_watcher_impl;
+    background_proxy_watcher_impl()
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub fn extract_type_prefix(address: &str) -> Option<&str> {
+    if let Some(indice) = address.find("://") {
+        if indice == 0 {
+            None
+        } else {
+            let prefix = &address[..indice];
+            let contains_banned = prefix.contains(|c| c == ':' || c == '/');
+
+            if !contains_banned { Some(prefix) } else { None }
+        }
+    } else {
+        None
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+pub fn start_background_watcher() {
+    static START_UPDATER_THREAD: Once = Once::new();
+    START_UPDATER_THREAD.call_once(|| {
+        thread::Builder::new()
+            .name("dynamic-proxy-updater".into())
+            .spawn(|| background_proxy_watcher())
+            .expect("failed to spawn dynamic-proxy-updater thread");
+    });
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+pub fn start_background_watcher() {}
+
+pub fn resolve_proxy_from_url(target_url: &Url) -> Option<String> {
+    if let Some(match_env) = ENV_PROXY_CACHE.get(target_url.scheme()) {
+        return Some(match_env.into());
+    }
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        let system_proxy_cache = get_proxy_cache();
+        if let Some(match_system) = system_proxy_cache.get(target_url.scheme()) {
+            return Some(match_system.into());
+        }
+    }
+    None
 }
