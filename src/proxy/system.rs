@@ -3,6 +3,7 @@ use std::{
     env,
     sync::{Arc, LazyLock, OnceLock},
 };
+use log::{debug, info, warn}; // Added for logging
 
 use url::Url;
 
@@ -78,15 +79,24 @@ impl SystemProxyMap {
 
 pub fn get_proxy_cache() -> Arc<SystemProxyMap> {
     let cache = SYSTEM_PROXY_CACHE.get_or_init(|| {
-        arc_swap::ArcSwap::from_pointee(parse_platform_values(get_from_platform()))
+        let initial_proxies = parse_platform_values(get_from_platform());
+        info!("Initialized system proxy cache with settings: {:?}", initial_proxies);
+        arc_swap::ArcSwap::from_pointee(initial_proxies)
     });
     cache.load().clone()
 }
 
 pub fn update_proxy_cache(proxy_map: SystemProxyMap) {
-    SYSTEM_PROXY_CACHE
-        .get()
-        .map(|p| p.store(Arc::new(proxy_map)));
+    debug!("Updating SYSTEM_PROXY_CACHE with: {:?}", proxy_map);
+    if let Some(cache) = SYSTEM_PROXY_CACHE.get() {
+        cache.store(Arc::new(proxy_map));
+    } else {
+        // This case implies get_proxy_cache() was not called before update_proxy_cache().
+        // This might be a logic error or an unexpected sequence of operations.
+        warn!("SYSTEM_PROXY_CACHE was not initialized when update_proxy_cache was called. The update will be missed.");
+        // Depending on strictness, one might panic here or attempt to initialize.
+        // For now, logging a warning is a reasonable approach.
+    }
 }
 
 pub fn create_auto_proxy_fn() -> impl Fn(&Url) -> Option<String> + Send + Sync + 'static {
