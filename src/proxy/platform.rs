@@ -63,16 +63,20 @@ pub fn start_background_watcher() {
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
 pub fn start_background_watcher() {}
 
-pub fn resolve_proxy_from_url(target_url: &Url) -> Option<String> {
-    if let Some(match_env) = ENV_PROXY_CACHE.get(target_url.scheme()) {
-        return Some(match_env.into());
-    }
+pub fn resolve_proxy_from_url(target_url: &Url) -> Option<Url> {
+    resolve_from_env(target_url).or_else(|| resolve_from_system_proxy(target_url))
+}
+
+fn resolve_from_env(target_url: &Url) -> Option<Url> {
+    ENV_PROXY_CACHE.get(target_url.scheme())?.into()
+}
+
+fn resolve_from_system_proxy(target_url: &Url) -> Option<Url> {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         let system_proxy_cache = get_proxy_cache();
-        if let Some(match_system) = system_proxy_cache.get(target_url.scheme()) {
-            return Some(match_system.into());
-        }
+        return system_proxy_cache.get(target_url.scheme())?.into();
     }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     None
 }

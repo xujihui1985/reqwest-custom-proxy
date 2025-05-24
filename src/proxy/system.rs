@@ -13,19 +13,40 @@ use super::{
     util::is_cgi,
 };
 
+#[derive(Debug)]
+pub enum MaybeUrl {
+    Url(Url),
+    String(String),
+}
+
+impl From<&MaybeUrl> for Option<Url> {
+    fn from(value: &MaybeUrl) -> Self {
+        match value {
+            MaybeUrl::Url(u) => Some(u.clone()),
+            MaybeUrl::String(s) => match s.parse() {
+                Ok(u) => Some(u),
+                Err(e) => {
+                    tracing::error!("failed to parse url {} err: {}", s, e);
+                    None
+                }
+            },
+        }
+    }
+}
+
 pub(crate) static SYSTEM_PROXY_CACHE: OnceLock<arc_swap::ArcSwap<SystemProxyMap>> = OnceLock::new();
 pub(crate) static ENV_PROXY_CACHE: LazyLock<SystemProxyMap> =
     LazyLock::new(|| SystemProxyMap::from_environment());
 
 #[derive(Debug)]
-pub struct SystemProxyMap(HashMap<String, String>);
+pub struct SystemProxyMap(HashMap<String, MaybeUrl>);
 
 impl SystemProxyMap {
     pub fn new() -> Self {
         Self(HashMap::new())
     }
 
-    pub fn get(&self, k: &str) -> Option<&String> {
+    pub fn get(&self, k: &str) -> Option<&MaybeUrl> {
         self.0.get(k)
     }
 
@@ -70,7 +91,13 @@ impl SystemProxyMap {
             // do not accept empty or whitespace proxy address
             false
         } else {
-            self.0.insert(scheme.into(), addr);
+            let url = {
+                match addr.parse::<Url>() {
+                    Ok(url) => MaybeUrl::Url(url),
+                    Err(_) => MaybeUrl::String(addr),
+                }
+            };
+            self.0.insert(scheme.into(), url);
             true
         }
     }
@@ -89,7 +116,7 @@ pub fn update_proxy_cache(proxy_map: SystemProxyMap) {
         .map(|p| p.store(Arc::new(proxy_map)));
 }
 
-pub fn create_auto_proxy_fn() -> impl Fn(&Url) -> Option<String> + Send + Sync + 'static {
+pub fn create_auto_proxy_fn() -> impl Fn(&Url) -> Option<Url> + Send + Sync + 'static {
     start_background_watcher();
     resolve_proxy_from_url
 }
